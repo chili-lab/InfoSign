@@ -1,0 +1,12 @@
+# Install a compatible CUDA torch/torchvision pair for your system first.
+torch>=2.0
+torchvision
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+scikit-learn
+PyYAML
+tqdm>=4.65
+wfdb>=4.1
+pydicom>=2.4
+Pillow>=10.0

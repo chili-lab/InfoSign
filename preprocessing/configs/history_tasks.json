@@ -1,0 +1,146 @@
+{
+  "schema_version": "ot2-history-task-spec-v1",
+  "definition_source": "https://docs.aireadi.org/v3-omopAndClinicalTable",
+  "estimand": "cross_sectional_self_reported_history_of_clinician_diagnosed_condition",
+  "question": "Has a doctor or other healthcare professional ever told you that you have/had...",
+  "observation_concept_id": 2005200014,
+  "yes_concept_ids": [
+    4188539,
+    45877994
+  ],
+  "no_concept_id": 45878245,
+  "refused_concept_id": 36311156,
+  "positive_rule": "explicit Yes with source-specific matching condition evidence",
+  "negative_rule": "explicit No without contradictory condition evidence",
+  "missing_rule": "exclude refusal, missing, unknown codes, encoding/identity conflict or multiple questionnaire dates",
+  "temporal_rule": "one valid questionnaire calendar date; audit visit offsets; no new fixed window; no prospective claim",
+  "input_policy": "same fixed Basic Clinical 23 columns plus eight modalities; no history response or condition field in model inputs",
+  "tasks": {
+    "kidney_history_binary": {
+      "source_key": "mhoccur_rnl",
+      "label": "Kidney problems",
+      "condition_concept_id": 2005200017,
+      "source_description": "Kidney problems",
+      "clinical_feature_exclusions": {
+        "condition_source_codes": [
+          "mhoccur_rnl"
+        ],
+        "observation_source_codes": [
+          "mhoccur_rnl"
+        ],
+        "condition_concept_ids": [
+          2005200017
+        ],
+        "scope": "Basic-only clinical input uses a stricter fixed allowlist"
+      }
+    },
+    "lung_history_binary": {
+      "source_key": "mhoccur_plm",
+      "label": "Chronic pulmonary / lung problems",
+      "condition_concept_id": 4186898,
+      "source_description": "Chronic pulmonary (lung) problems (Examples: emphysema, asthma, tuberculosis, asbestosis)",
+      "clinical_feature_exclusions": {
+        "condition_source_codes": [
+          "mhoccur_plm"
+        ],
+        "observation_source_codes": [
+          "mhoccur_plm"
+        ],
+        "condition_concept_ids": [
+          4186898
+        ],
+        "scope": "Basic-only clinical input uses a stricter fixed allowlist"
+      }
+    },
+    "cancer_history_binary": {
+      "source_key": "mhoccur_ca",
+      "label": "Cancer (any type)",
+      "condition_concept_id": 4194405,
+      "source_description": "Cancer (any type)",
+      "clinical_feature_exclusions": {
+        "condition_source_codes": [
+          "mhoccur_ca"
+        ],
+        "observation_source_codes": [
+          "mhoccur_ca"
+        ],
+        "condition_concept_ids": [
+          4194405
+        ],
+        "scope": "Basic-only clinical input uses a stricter fixed allowlist"
+      }
+    },
+    "arthritis_history_binary": {
+      "source_key": "mhoccur_ra",
+      "label": "Arthritis (joint pain)",
+      "condition_concept_id": 4291025,
+      "source_description": "Arthritis (joint pain)",
+      "clinical_feature_exclusions": {
+        "condition_source_codes": [
+          "mhoccur_ra"
+        ],
+        "observation_source_codes": [
+          "mhoccur_ra"
+        ],
+        "condition_concept_ids": [
+          4291025
+        ],
+        "scope": "Basic-only clinical input uses a stricter fixed allowlist"
+      }
+    },
+    "osteoporosis_history_binary": {
+      "source_key": "mhoccur_oa",
+      "label": "Osteoporosis",
+      "condition_concept_id": 80502,
+      "source_description": "Osteoporosis",
+      "clinical_feature_exclusions": {
+        "condition_source_codes": [
+          "mhoccur_oa"
+        ],
+        "observation_source_codes": [
+          "mhoccur_oa"
+        ],
+        "condition_concept_ids": [
+          80502
+        ],
+        "scope": "Basic-only clinical input uses a stricter fixed allowlist"
+      }
+    },
+    "digestive_history_binary": {
+      "source_key": "mhoccur_gi",
+      "label": "Digestive problems",
+      "condition_concept_id": 4201745,
+      "source_description": "Digestive problems (Examples: stomach ulcer, gastrointestinal problems, hiatal hernia)",
+      "clinical_feature_exclusions": {
+        "condition_source_codes": [
+          "mhoccur_gi"
+        ],
+        "observation_source_codes": [
+          "mhoccur_gi"
+        ],
+        "condition_concept_ids": [
+          4201745
+        ],
+        "scope": "Basic-only clinical input uses a stricter fixed allowlist"
+      }
+    },
+    "urinary_history_binary": {
+      "source_key": "mhoccur_ua",
+      "label": "Urinary problems",
+      "condition_concept_id": 81902,
+      "source_description": "Urinary problems (Examples: urinary tract infections, incontinence, prostate problems)",
+      "clinical_feature_exclusions": {
+        "condition_source_codes": [
+          "mhoccur_ua"
+        ],
+        "observation_source_codes": [
+          "mhoccur_ua"
+        ],
+        "condition_concept_ids": [
+          81902
+        ],
+        "scope": "Basic-only clinical input uses a stricter fixed allowlist"
+      }
+    }
+  }
+}

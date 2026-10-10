@@ -1,0 +1,23 @@
+# Local data and experiment outputs
+/data/*
+!/data/aireadi/
+/data/aireadi/*
+!/data/aireadi/.gitkeep
+/outputs/
+/tests/
+
+# Python and local settings
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+*.local.yaml
+.DS_Store
+
+# Model weights and logs
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.log

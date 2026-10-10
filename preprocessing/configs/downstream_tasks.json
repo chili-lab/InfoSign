@@ -1,0 +1,144 @@
+{
+  "moca_binary": {
+    "label": {
+      "table": "measurement",
+      "concept_id": 37174522,
+      "value_column": "value_as_number",
+      "threshold": 26,
+      "positive_rule": "value < 26",
+      "negative_rule": "value >= 26",
+      "positive_class_name": "possible_cognitive_impairment",
+      "negative_class_name": "normal_cognition",
+      "valid_range": [0, 30]
+    },
+    "clinical_feature_exclusions": {
+      "measurement_concept_ids": [
+        37174522,
+        1988422,
+        3006440,
+        37161934,
+        37161935,
+        2005200344,
+        2005200345,
+        2005200346,
+        2005200347,
+        2005200348,
+        2005200349,
+        2005200350,
+        2005200351,
+        2005200352,
+        2005200353,
+        2005200354,
+        2005200355,
+        2005200356,
+        2005200357,
+        2005200358,
+        2005200359,
+        2005200360,
+        2005200361,
+        2005200362,
+        2005200363,
+        2005200364,
+        2005200365,
+        2005200366,
+        2005200367,
+        2005200368,
+        2005200369,
+        2005200370,
+        2005200371,
+        2005200373
+      ],
+      "observation_concept_ids": [378419],
+      "condition_source_codes": ["mhoccur_ad", "mhoccur_cogn"],
+      "source_key_patterns": [
+        "moca",
+        "memory_trial",
+        "delayed_recall",
+        "digitspan",
+        "fluency_language",
+        "naming",
+        "subtraction",
+        "repetition",
+        "clock_visuospatial_executive",
+        "cube_visuospatial_executive",
+        "trails_visuospatial_executive",
+        "dementia_history",
+        "mild_cognitive_impairment_history",
+        "mhoccur_ad",
+        "mhoccur_cogn"
+      ]
+    }
+  },
+  "cvd_broad_binary": {
+    "label": {
+      "table": "condition_occurrence",
+      "source_column": "condition_source_value",
+      "positive_class_name": "cvd_broad_history_present",
+      "negative_class_name": "cvd_broad_history_absent",
+      "negative_evidence_policy": "all_target_questions_explicit_no",
+      "response_evidence": {
+        "table": "observation",
+        "source_column": "observation_source_value",
+        "value_concept_column": "value_as_concept_id",
+        "yes_concept_id": 4188539,
+        "no_concept_id": 45878245,
+        "unknown_concept_ids": [36311156]
+      },
+      "positive_source_codes": [
+        "mhoccur_hbp",
+        "mhoccur_clsh",
+        "mhoccur_cvdot",
+        "mhoccur_lbp",
+        "mhoccur_mi",
+        "mhoccur_strk",
+        "mhoccur_circ",
+        "mhoccur_rvo"
+      ]
+    },
+    "clinical_feature_exclusions": {
+      "condition_source_codes": [
+        "mhoccur_hbp",
+        "mhoccur_clsh",
+        "mhoccur_cvdot",
+        "mhoccur_lbp",
+        "mhoccur_mi",
+        "mhoccur_strk",
+        "mhoccur_circ",
+        "mhoccur_rvo"
+      ]
+    }
+  },
+  "cvd_strict_binary": {
+    "label": {
+      "table": "condition_occurrence",
+      "source_column": "condition_source_value",
+      "positive_class_name": "cvd_strict_history_present",
+      "negative_class_name": "cvd_strict_history_absent",
+      "negative_evidence_policy": "all_target_questions_explicit_no",
+      "response_evidence": {
+        "table": "observation",
+        "source_column": "observation_source_value",
+        "value_concept_column": "value_as_concept_id",
+        "yes_concept_id": 4188539,
+        "no_concept_id": 45878245,
+        "unknown_concept_ids": [36311156]
+      },
+      "positive_source_codes": [
+        "mhoccur_cvdot",
+        "mhoccur_mi",
+        "mhoccur_strk",
+        "mhoccur_circ",
+        "mhoccur_rvo"
+      ]
+    },
+    "clinical_feature_exclusions": {
+      "condition_source_codes": [
+        "mhoccur_cvdot",
+        "mhoccur_mi",
+        "mhoccur_strk",
+        "mhoccur_circ",
+        "mhoccur_rvo"
+      ]
+    }
+  }
+}

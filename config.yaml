@@ -1,0 +1,60 @@
+# Paths and resources for preparation and the three paper experiment groups.
+preprocessing:
+  # Raw AI-READI v3.0.0 download, preserving its directory structure.
+  # Paths are relative to the repository root; absolute paths also work.
+  dataset_root: data/aireadi
+  participants: "{dataset_root}/participants.tsv"
+  clinical_dir: "{dataset_root}/clinical_data"
+  manifests:
+    retinal_photography: "{dataset_root}/retinal_photography/manifest.tsv"
+    retinal_oct: "{dataset_root}/retinal_oct/manifest.tsv"
+    retinal_octa: "{dataset_root}/retinal_octa/manifest.tsv"
+    retinal_flio: "{dataset_root}/retinal_flio/manifest.tsv"
+    cardiac_ecg: "{dataset_root}/cardiac_ecg/manifest.tsv"
+    environment: "{dataset_root}/environment/manifest.tsv"
+    wearable_activity_monitor: "{dataset_root}/wearable_activity_monitor/manifest.tsv"
+    wearable_blood_glucose: "{dataset_root}/wearable_blood_glucose/manifest.tsv"
+  prepared_root: outputs/preprocessed
+  source_root: outputs/prepared
+  workers: 8
+  devices: [0, 1, 2, 3]
+  num_workers: 2
+  cpu_threads: 2
+  cache_people_per_batch: 4
+  retinal_batch_size: 128
+  retinal_weights_path: null
+
+study:
+  # Run from the repository root. AI-READI data must be obtained separately.
+  source_root: outputs/prepared
+  output_root: outputs/study_without_observation
+  clinical_dir: data/aireadi/clinical_data
+  exclude_observation: true
+
+  devices: [0, 1, 2, 3]
+  seed: 42
+  batch_size: 32
+  num_workers: 2
+  cpu_threads: 2
+  max_epochs: 30
+  patience: 7
+  learning_rate: 0.00005
+  weight_decay: 0.01
+
+  concept_epochs: 400
+  head_epochs: 300
+  joint_epochs: 300
+  concept_patience: 40
+  cbm_learning_rate: 0.001
+  cbm_weight_decay: 0.0001
+  concept_lambda: 1.0
+  concept_tolerance: 0.1
+  bootstrap_samples: 10000
+
+  tasks:
+    - moca_binary
+    - cardiovascular_conditions_binary
+    - major_cardiovascular_events_binary
+    - osteoporosis_history_binary
+    - kidney_history_binary
+    - lung_history_binary

@@ -1,0 +1,69 @@
+{
+  "cardiovascular_conditions_binary": {
+    "task_label": "Broad cardiovascular conditions",
+    "label": {
+      "table": "condition_occurrence",
+      "source_column": "condition_source_value",
+      "positive_class_name": "cardiovascular_conditions_history_present",
+      "negative_class_name": "cardiovascular_conditions_history_absent",
+      "negative_evidence_policy": "all_target_questions_explicit_no",
+      "response_evidence": {
+        "table": "observation",
+        "source_column": "observation_source_value",
+        "value_concept_column": "value_as_concept_id",
+        "yes_concept_id": 4188539,
+        "no_concept_id": 45878245,
+        "unknown_concept_ids": [36311156]
+      },
+      "positive_source_codes": [
+        "mhoccur_hbp",
+        "mhoccur_clsh",
+        "mhoccur_circ",
+        "mhoccur_rvo",
+        "mhoccur_cvdot"
+      ]
+    },
+    "concepts": [
+      {"concept_id": 316866, "source_field": "mhoccur_hbp", "concept_name": "Hypertensive disorder"},
+      {"concept_id": 4159131, "source_field": "mhoccur_clsh", "concept_name": "Dyslipidemia"},
+      {"concept_id": 2005200015, "source_field": "mhoccur_circ", "concept_name": "Circulation problems"},
+      {"concept_id": 440392, "source_field": "mhoccur_rvo", "concept_name": "Retinal vascular occlusion"},
+      {"concept_id": 2005200627, "source_field": "mhoccur_cvdot", "concept_name": "Other heart issues"}
+    ],
+    "clinical_feature_exclusions": {
+      "condition_source_codes": [
+        "mhoccur_hbp",
+        "mhoccur_clsh",
+        "mhoccur_circ",
+        "mhoccur_rvo",
+        "mhoccur_cvdot"
+      ]
+    }
+  },
+  "major_cardiovascular_events_binary": {
+    "task_label": "Major cardiovascular events",
+    "label": {
+      "table": "condition_occurrence",
+      "source_column": "condition_source_value",
+      "positive_class_name": "myocardial_infarction_or_stroke_history_present",
+      "negative_class_name": "myocardial_infarction_and_stroke_history_absent",
+      "negative_evidence_policy": "all_target_questions_explicit_no",
+      "response_evidence": {
+        "table": "observation",
+        "source_column": "observation_source_value",
+        "value_concept_column": "value_as_concept_id",
+        "yes_concept_id": 4188539,
+        "no_concept_id": 45878245,
+        "unknown_concept_ids": [36311156]
+      },
+      "positive_source_codes": ["mhoccur_mi", "mhoccur_strk"]
+    },
+    "concepts": [
+      {"concept_id": 4329847, "source_field": "mhoccur_mi", "concept_name": "Myocardial infarction (Heart attack)"},
+      {"concept_id": 2005200628, "source_field": "mhoccur_strk", "concept_name": "Stroke"}
+    ],
+    "clinical_feature_exclusions": {
+      "condition_source_codes": ["mhoccur_mi", "mhoccur_strk"]
+    }
+  }
+}
