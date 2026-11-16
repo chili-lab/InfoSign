@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
-from infosign.stats import balanced_indices, f1, threshold
+from infosign.stats import balanced_indices, f1, threshold, auroc
 
 
 def numeric(value):
@@ -125,12 +125,16 @@ class IndividualCBM(nn.Module):
 
     def bottleneck(self, x):
         raw = self.concept_layer(x)
+        return raw, self.raw_to_bottleneck(raw)
+
+    def raw_to_bottleneck(self, raw):
+        """Apply the same item encodings to predicted or intervened raw channels."""
         z = raw * self.active + self.constant
         for width in self.widths:
             cols = getattr(self, f'cat_columns_{width}')
-            probs = raw[:, cols].reshape(len(x), -1, width).softmax(-1).flatten(1)
+            probs = raw[:, cols].reshape(len(raw), -1, width).softmax(-1).flatten(1)
             z = z.index_copy(1, cols, probs)
-        return raw, z
+        return z
 
     def forward(self, x):
         raw, z = self.bottleneck(x)
@@ -156,7 +160,7 @@ class IndividualCBM(nn.Module):
 def state(model): return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
 
-def fit(train, val, labels, schema, cfg, device, masked_train=None):
+def fit(train, val, labels, schema, cfg, device, masked_train=None, val_full=None):
     """Frozen backbone; concept warm-up, head fitting, then joint readout tuning.
 
     Mixed mode oversamples participants once per epoch, then presents both
@@ -164,8 +168,18 @@ def fit(train, val, labels, schema, cfg, device, masked_train=None):
     and vocabulary are fitted to unique original training participants only.
     """
     torch.manual_seed(cfg['seed'])
+    checkpoint_metric = cfg.get('cbm_checkpoint_metric', 'f1')
+    if checkpoint_metric not in ('f1', 'auroc', 'mean_auroc'):
+        raise ValueError('cbm_checkpoint_metric must be f1, auroc or mean_auroc')
+    if checkpoint_metric == 'mean_auroc' and val_full is None:
+        raise ValueError('mean_auroc selection requires the full-view validation embeddings')
     spec, data = prepare(train, val, labels, schema)
     data = [{k: v.to(device) for k, v in d.items()} for d in data]
+    full_validation = None
+    if val_full is not None:
+        full_validation = torch.as_tensor(
+            (np.asarray(val_full)-np.asarray(spec['x_mean']))/np.asarray(spec['x_std']),
+            dtype=torch.float32, device=device)
     masked = None
     if masked_train is not None:
         masked = torch.as_tensor((np.asarray(masked_train)-np.asarray(spec['x_mean']))/np.asarray(spec['x_std']),
@@ -191,25 +205,36 @@ def fit(train, val, labels, schema, cfg, device, masked_train=None):
             with torch.no_grad():
                 c, loss_y = model.losses(data[1])
                 p = model(data[1]['x'])[2].sigmoid().cpu().numpy()
+                full_p = model(full_validation)[2].sigmoid().cpu().numpy() if full_validation is not None else None
             per = c.cpu().numpy(); concept_loss = float(c.nanmean())
             known = np.isfinite(per)
             eligible = phase != 'joint' or bool(np.all(per[known] <= reference[known]*(1+cfg['concept_tolerance'])+1e-8))
             cut = threshold(val['y'], p); score = float(f1(val['y'], p, cut))
-            key = (-concept_loss, -float(loss_y)) if phase == 'concept' else (score, -float(loss_y))
+            val_auroc = float(auroc(val['y'], p))
+            full_auroc = float(auroc(val['y'], full_p)) if full_p is not None else float('nan')
+            mean_auroc = (val_auroc + full_auroc)/2
+            primary = mean_auroc if checkpoint_metric == 'mean_auroc' else val_auroc if checkpoint_metric == 'auroc' else score
+            if not np.isfinite(primary):
+                raise ValueError('CBM checkpoint selection requires a finite validation metric')
+            key = (-concept_loss, -float(loss_y)) if phase == 'concept' else (primary, -float(loss_y))
             history.append(dict(phase=phase, epoch=epoch, val_f1=score, threshold=cut,
+                                val_auroc=val_auroc, checkpoint_metric=checkpoint_metric,
+                                val_auroc_masked=val_auroc, val_auroc_full=full_auroc, val_auroc_mean=mean_auroc,
                                 val_task_loss=float(loss_y), val_concept_loss=concept_loss, eligible=eligible))
             if eligible and key > best_key:
                 best, best_key, best_epoch, stale = state(model), key, epoch, 0
             else: stale += 1
             if epoch % 25 == 0 or stale >= cfg['concept_patience']:
-                print(f'[CBM {phase}] epoch={epoch} val_F1={score:.4f} concept_loss={concept_loss:.4f} eligible={eligible}', flush=True)
+                print(f'[CBM {phase}] epoch={epoch} val_AUROC_masked={val_auroc:.4f} '
+                      f'val_AUROC_full={full_auroc:.4f} val_AUROC_mean={mean_auroc:.4f} val_F1={score:.4f} '
+                      f'select_by={checkpoint_metric} concept_loss={concept_loss:.4f} eligible={eligible}', flush=True)
             if stale >= cfg['concept_patience']: break
         model.load_state_dict(best)
         selections[phase] = dict(epoch=best_epoch, status='sequential_fallback' if phase=='joint' and best_epoch==0 else 'fitted')
         if phase == 'head':
             with torch.no_grad(): reference = model.losses(data[1])[0].cpu().numpy()
     _, p = predict(model, val['embedding'])
-    return dict(spec=spec, states={'joint':state(model)}, selection=selections,
+    return dict(spec=spec, states={'joint':state(model)}, selection=selections, checkpoint_metric=checkpoint_metric,
                 threshold=threshold(val['y'], p), backbone_frozen=True,
                 training_views=['full','masked'] if masked_train is not None else ['basic'],
                 concept_lambda=cfg['concept_lambda'], concept_tolerance=cfg['concept_tolerance']), history
@@ -231,7 +256,10 @@ def predict(model, embedding):
 def run_cbm(task, cfg, device):
     task_root = Path(cfg['output_root'])/task
     root = task_root/'mixed_cbm'; root.mkdir(parents=True, exist_ok=True)
-    if (root/'DONE.json').exists(): print(f'[reuse] {task}/mixed_cbm', flush=True); return
+    if (root/'DONE.json').exists():
+        if read_json(root/'DONE.json').get('checkpoint_metric','f1') != cfg.get('cbm_checkpoint_metric','f1'):
+            raise ValueError(f'{root}: checkpoint metric changed; use a new output directory')
+        print(f'[reuse] {task}/mixed_cbm', flush=True); return
     source = backbone_dir(task,cfg)/'full'
     train = load(source/'features_train.pt'); val = load(source/'features_val.pt')
     labels = pd.read_csv(Path(cfg['output_root'])/'labels'/task/'labels.csv', dtype=str, keep_default_na=False)
@@ -239,12 +267,13 @@ def run_cbm(task, cfg, device):
     validation = {**val, 'embedding':val['masked_embedding']}
     torch.set_float32_matmul_precision('highest')
     artifact, history = fit(train, validation, labels, schema, cfg, device,
-                            masked_train=train['masked_embedding'])
+                            masked_train=train['masked_embedding'], val_full=val['embedding'])
     save_torch(root/'model.pt', artifact)
     pd.DataFrame(history).to_csv(root/'training.csv', index=False)
     write_json(root/'concept_definitions.json', artifact['spec']['items'])
     write_json(root/'DONE.json', dict(task=task, mode='mixed', threshold=artifact['threshold'],
-        selection=artifact['selection'], inventory_ids=schema['inventory_ids'],
+        selection=artifact['selection'], checkpoint_metric=artifact['checkpoint_metric'], seed=cfg['seed'],
+        inventory_ids=schema['inventory_ids'],
         learned_items=sum(c['learnable'] for c in artifact['spec']['items']),
         input_backbone='full', backbone_frozen=True))
 

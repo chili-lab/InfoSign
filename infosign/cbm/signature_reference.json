@@ -1,0 +1,65 @@
+{
+  "description": "Validation predicted restoration, population SD, all Concept IDs including constants. Reference from validation_selection_summary.csv accompanying SUMMARY_VALIDATION_SELECTED_test.md; only validation selection information is included.",
+  "tasks": {
+    "moca_binary": {
+      "eligible_ids": 109,
+      "selected_ids": [
+        "2005200337",
+        "2005200056",
+        "2005200053",
+        "2005200336",
+        "2005200552"
+      ]
+    },
+    "cardiovascular_conditions_binary": {
+      "eligible_ids": 107,
+      "selected_ids": [
+        "433736",
+        "3006923",
+        "3004249",
+        "37018196",
+        "4172830",
+        "3010084"
+      ]
+    },
+    "major_cardiovascular_events_binary": {
+      "eligible_ids": 110,
+      "selected_ids": [
+        "4239408",
+        "2005200156",
+        "3035941",
+        "3012888",
+        "2005200486",
+        "2005200336",
+        "3013682"
+      ]
+    },
+    "osteoporosis_history_binary": {
+      "eligible_ids": 111,
+      "selected_ids": [
+        "3024128",
+        "3007461",
+        "40769783",
+        "4291025"
+      ]
+    },
+    "kidney_history_binary": {
+      "eligible_ids": 111,
+      "selected_ids": [
+        "40769783",
+        "3002385",
+        "381270",
+        "440392"
+      ]
+    },
+    "lung_history_binary": {
+      "eligible_ids": 111,
+      "selected_ids": [
+        "3006906",
+        "3020630",
+        "4239408",
+        "4317977"
+      ]
+    }
+  }
+}

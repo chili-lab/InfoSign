@@ -50,7 +50,9 @@ def run_analysis(task, cfg, device):
     backbone = backbone_dir(task, cfg)
     out = root/'analysis'; out.mkdir(parents=True, exist_ok=True)
     done = read_json(out/'DONE.json') if (out/'DONE.json').exists() else {}
-    if done.get('analysis_version') == ANALYSIS_VERSION:
+    individual_restoration = cfg.get('analysis_individual_restoration', True)
+    if (done.get('analysis_version') == ANALYSIS_VERSION and
+            done.get('individual_restoration', True) == individual_restoration):
         print(f'[reuse analysis] {task}', flush=True); return
     # Invalidate old completion before writing the replacement tables.
     (out/'DONE.json').unlink(missing_ok=True)
@@ -58,7 +60,8 @@ def run_analysis(task, cfg, device):
     removals = {v: cached_removals(task, v, cfg, device, out) for v in ('full','basic')}
     artifact = load(root/'mixed_cbm/model.pt')
     model = restore(artifact, device)
-    groups = concept_id_groups(artifact['spec']['items'])
+    # The AUROC rerun computes individual IDs once in concept_diagnostics.
+    groups = concept_id_groups(artifact['spec']['items']) if individual_restoration else {}
     cuts = {k: read_json(backbone/k/'TRAINING_DONE.json')['threshold'] for k in ('full','basic')}
     cuts['mixed_cbm'] = artifact['threshold']
     torch.set_float32_matmul_precision('highest')
@@ -120,9 +123,9 @@ def run_analysis(task, cfg, device):
         pd.DataFrame(predictions).to_csv(out/f'predictions_{split}.csv', index=False)
         # All tasks use exactly the same Mixed-CBM missing-input condition.
         cut = cuts['mixed_cbm']; names = list(groups)
-        restored = np.concatenate([restoration_batch(model, mz, fz, [groups[c]['columns'] for c in names[start:start+32]])
-                                   for start in range(0, len(names), 32)])
-        details = restoration_details(y, restored, mp, cut, [groups[c]['learnable'] for c in names])
+        restored = (np.concatenate([restoration_batch(model, mz, fz, [groups[c]['columns'] for c in names[start:start+32]])
+                                    for start in range(0, len(names), 32)]) if names else np.empty((0, n), dtype=mp.dtype))
+        details = restoration_details(y, restored, mp, cut, [groups[c]['learnable'] for c in names]) if names else []
         names.append('ALL_CONCEPTS')
         all_restored = restoration_batch(model, mz, fz, [list(range(model.spec['width']))])
         restored = np.concatenate((restored, all_restored))
@@ -154,7 +157,9 @@ def run_analysis(task, cfg, device):
         table = pd.DataFrame(restored.T, columns=names)
         table.insert(0,'masked_probability',mp); table.insert(0,'y',y); table.insert(0,'person_id',basic['person_ids'])
         table.to_csv(out/f'restoration_mixed__nonbasic_clinical_{split}.csv', index=False)
-        print(f'[restore {task}/{split}/mixed] {len(groups)} IDs + all concepts; ranked on {split}', flush=True)
+        description = (f'{len(groups)} individual IDs + all concepts; ranked on {split}' if individual_restoration else
+                       'all concepts jointly; individual-ID recovery is handled by concept diagnostics')
+        print(f'[restore {task}/{split}/mixed] {description}', flush=True)
         del boot
     write_json(out/'SELECTION.json', selection)
     for name, rows in [('classification',classification), ('comparisons',comparisons), ('ablation',ablations),
@@ -162,4 +167,5 @@ def run_analysis(task, cfg, device):
         pd.DataFrame(rows).to_csv(out/(name+'.csv'), index=False)
     write_json(out/'DONE.json', dict(task=task, seed=cfg['seed'], bootstrap_samples=cfg['bootstrap_samples'],
                                    analysis_version=ANALYSIS_VERSION,
+                                   individual_restoration=individual_restoration,
                                    reported_metrics=['f1','balanced_accuracy','auroc']))

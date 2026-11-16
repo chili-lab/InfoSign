@@ -23,6 +23,7 @@ def make_reports(cfg, concepts_only=False):
 
 def run_worker(cfg, task, phase, cpu=False):
     """Execute one scheduled job on its assigned visible GPU."""
+    cfg = {**cfg, **cfg.get('task_settings', {}).get(task, {})}
     for key in ('OMP_NUM_THREADS','MKL_NUM_THREADS','OPENBLAS_NUM_THREADS'):
         os.environ[key]=str(cfg['cpu_threads'])
     import torch
@@ -30,7 +31,10 @@ def run_worker(cfg, task, phase, cpu=False):
     torch.set_float32_matmul_precision('high')
     device=torch.device('cpu' if cpu else 'cuda:0')
     if device.type=='cuda':torch.backends.cudnn.benchmark=True
-    if phase=='concept-diagnostics':
+    if phase=='concept-validation':
+        from infosign.cbm.validation import run_validation_recovery
+        run_validation_recovery(task,cfg,device)
+    elif phase=='concept-diagnostics':
         from infosign.cbm.diagnostics import run_diagnostics
         run_diagnostics(task,cfg,device)
     elif phase=='analyze':
@@ -97,11 +101,16 @@ def main():
     p.add_argument('--config',type=Path,default=HERE/'config.yaml')
     p.add_argument('--devices',nargs='+');p.add_argument('--source-root',type=Path)
     p.add_argument('--output-root',type=Path)
-    p.add_argument('--stage',choices=('all','train','analyze','report','concept-diagnostics','concept-diagnostics-report'),default='all')
-    p.add_argument('--worker',choices=('full','basic','analyze','concept-diagnostics'),help=argparse.SUPPRESS)
+    p.add_argument('--cbm-roots',nargs='+',type=Path,
+                   help='Completed CBM study roots for concept-validation; first matching root wins per task.')
+    p.add_argument('--stage',choices=('all','train','analyze','report','concept-diagnostics','concept-diagnostics-report',
+                                    'concept-validation','concept-validation-report'),default='all')
+    p.add_argument('--worker',choices=('full','basic','analyze','concept-diagnostics','concept-validation'),
+                   help=argparse.SUPPRESS)
     p.add_argument('--task',help=argparse.SUPPRESS)
     p.add_argument('--cpu',action='store_true',help=argparse.SUPPRESS)
-    a=p.parse_args();settings=yaml.safe_load(a.config.read_text())
+    a=p.parse_args()
+    settings=yaml.safe_load(a.config.read_text())
     cfg=settings.get('study',settings)
     if a.worker:
         if not a.task:p.error('--worker requires --task')
@@ -115,6 +124,16 @@ def main():
         cfg['backbone_root']=str(Path(cfg['backbone_root']).expanduser().resolve())
         if cfg['backbone_root']==cfg['output_root']:
             raise ValueError('Choose a separate output-root for the new CBMs.')
+    if a.cbm_roots:
+        if a.stage not in ('concept-validation','concept-validation-report'):
+            p.error('--cbm-roots is only used with concept-validation or concept-validation-report')
+        roots=[p.expanduser().resolve() for p in a.cbm_roots]
+        cfg['concept_sources']={}
+        for task in cfg['tasks']:
+            matches=[r for r in roots if (r/task/'mixed_cbm/model.pt').is_file()]
+            if not matches:raise FileNotFoundError('No completed mixed_cbm/model.pt found for '+task)
+            cfg['concept_sources'][task]=str(matches[0])
+            print(f'[CBM source] {task}: {matches[0]}',flush=True)
     cfg['devices']=list(map(str,cfg['devices']))
     root=Path(cfg['output_root']);source=Path(cfg['source_root'])
     if root==source:raise ValueError('Use separate prepared-input and experiment output directories.')
@@ -122,6 +141,24 @@ def main():
     for key in ('OMP_NUM_THREADS','MKL_NUM_THREADS','OPENBLAS_NUM_THREADS'):os.environ[key]=str(cfg['cpu_threads'])
     from infosign.common import read_json,write_json
     from infosign.report import make_report
+    if a.stage in ('concept-validation','concept-validation-report'):
+        from infosign.cbm.validation import make_validation_report
+        destination=root/'validation_selected'
+        destination.mkdir(exist_ok=True);(destination/'logs').mkdir(exist_ok=True)
+        if a.stage=='concept-validation-report':
+            make_validation_report(cfg)
+            return
+        # A separate analysis directory keeps all prior test-selected outputs.
+        runtime=destination/'runtime.yaml'
+        with (destination/'.run.lock').open('a') as lock:
+            try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:raise RuntimeError('Validation-selected recovery is already running') from None
+            runtime.write_text(yaml.safe_dump(cfg,sort_keys=False))
+            jobs=[(task+'_validation_recovery',['--task',task,'--worker','concept-validation']) for task in cfg['tasks']]
+            pool(jobs,cfg['devices'],runtime,destination)
+            make_validation_report(cfg)
+        print('VALIDATION_SELECTED_COMPLETE: '+str(destination),flush=True)
+        return
     diagnostics = a.stage in ('concept-diagnostics','concept-diagnostics-report')
     runtime=root/'runtime.yaml'
     if runtime.exists():
@@ -146,7 +183,21 @@ def main():
                 if not (source/'inputs.json').exists() or not (source/'cache/dimensions.json').exists():
                     raise FileNotFoundError('Prepared inputs/cache are missing at '+str(source)+
                         '. Download AI-READI separately, then run prepare.py; see README.md.')
-                read_json(source/'inputs.json');read_json(source/'cache/dimensions.json')
+                input_root = Path(cfg.get('prepared_inputs_root') or source)
+                registry = read_json(input_root/'inputs.json')
+                missing_tasks = [task for task in cfg['tasks'] if task not in registry]
+                if missing_tasks:
+                    raise ValueError('Outcome tasks missing from '+str(input_root/'inputs.json')+': '+
+                        ', '.join(missing_tasks)+'. Complete prepare.py --stage cache with your '
+                        'preprocessing config and use its source_root. Generating labels alone '
+                        'does not register training inputs; see README.md: Outcome labels.')
+                for task in cfg['tasks']:
+                    master = Path(registry[task]['master'])
+                    if not master.is_file():
+                        raise FileNotFoundError(f'{task}: registered outcome master is missing: {master}. '
+                            'Run prepare.py --stage cache with your preprocessing config to rebuild '
+                            'the local registry; do not copy inputs.json from another machine.')
+                read_json(source/'cache/dimensions.json')
                 if not (root/'labels/DONE.json').exists():
                     from infosign.cbm.labels import extract,FOUR_OBSERVATION_FORMS,SURVEY_ADMIN_IDS
                     extract(cfg['clinical_dir'],root/'labels',observation_forms=() if cfg.get('exclude_observation') else FOUR_OBSERVATION_FORMS,excluded_ids=SURVEY_ADMIN_IDS,tasks=cfg['tasks'])

@@ -51,6 +51,13 @@ study:
   concept_tolerance: 0.1
   bootstrap_samples: 10000
 
+  # Checkpoint and concept selection used in the paper.
+  backbone_checkpoint_metric: auroc        # Full/Basic Clinical models: validation AUROC
+  cbm_checkpoint_metric: mean_auroc        # Mixed CBM: mean of full- and masked-input validation AUROC
+  analysis_individual_restoration: false   # single-ID recovery is reported by --stage concept-validation
+  selection_sd: 1.0                        # concept-validation: validation ΔAUROC > μ + 1σ
+  restore_all_concepts: true               # concept-validation also reports all-concept recovery
+
   tasks:
     - moca_binary
     - cardiovascular_conditions_binary

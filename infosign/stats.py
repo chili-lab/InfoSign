@@ -27,8 +27,8 @@ def auroc(y, probability):
     return float(values[0]) if p.ndim == 1 else values
 
 
-def auroc_selection(gains, eligible=None):
-    """Select individual IDs strictly above their own distribution's μ + 2σ.
+def auroc_selection(gains, eligible=None, sd=2.0):
+    """Select individual IDs strictly above their own distribution's μ + sd·σ.
 
     Call once per task, split and intervention population, without a joint/all-ID
     row. σ is the population SD (ddof=0). This is descriptive selection, not a
@@ -40,7 +40,7 @@ def auroc_selection(gains, eligible=None):
     n = int(valid.sum()); values = gains[valid]
     mean = float(values.mean()) if n else np.nan
     std = float(values.std(ddof=0)) if n else np.nan
-    cutoff = mean + 2*std
+    cutoff = mean + sd*std
     rank = np.full(len(gains), np.nan)
     rank[valid] = np.searchsorted(np.sort(-values), -values, side='left') + 1
     return dict(auroc_rank_within_split=rank,
@@ -65,7 +65,9 @@ def balanced_indices(y, seed):
     y = np.asarray(y); rng = np.random.default_rng(seed)
     groups = [np.flatnonzero(y == k) for k in (0, 1)]
     if any(len(g) == 0 for g in groups):
-        raise ValueError('Training needs both outcome classes for oversampling')
+        raise ValueError('Training needs both outcome classes for oversampling: '
+                         f'N={len(y)}, negative={len(groups[0])}, positive={len(groups[1])}. '
+                         'Check the training split and outcome labels; oversampling cannot create a missing class.')
     size = max(map(len, groups))
     indices = np.concatenate([np.r_[g, rng.choice(g, size - len(g), replace=True)] for g in groups])
     return rng.permutation(indices)

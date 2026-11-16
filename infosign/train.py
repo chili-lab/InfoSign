@@ -10,7 +10,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from infosign.common import MODALITIES, REMOVALS, read_json, write_json, save_torch
 from infosign.data import CachedDataset, clinical_inputs, collate, cache_config
-from infosign.stats import BalancedSampler, f1, threshold
+from infosign.stats import BalancedSampler, f1, threshold, auroc
 from infosign.encoders import Task2V2Model, Task2V2ModelConfig, PresenceAwareFusion, BinaryTaskHead
 
 
@@ -49,14 +49,22 @@ def predict_loader(model, dl, task, device):
 
 
 def fit(model, train_dl, val_dl, task, cfg, root, device):
+    checkpoint_metric = cfg.get('backbone_checkpoint_metric', 'f1')
+    if checkpoint_metric not in ('f1', 'auroc'):
+        raise ValueError('backbone_checkpoint_metric must be f1 or auroc')
     if (root/'TRAINING_DONE.json').exists():
+        if read_json(root/'TRAINING_DONE.json').get('checkpoint_metric', 'f1') != checkpoint_metric:
+            raise ValueError(f'{root}: checkpoint selection changed; use a new output directory')
         model.load_state_dict(load(root/'best.pt')['model'])
         return read_json(root/'TRAINING_DONE.json')
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad],
                            lr=cfg['learning_rate'], weight_decay=cfg['weight_decay'])
     start = 0; best = (-math.inf, -math.inf); bad = 0; history = []
     if (root/'last.pt').exists():
-        last = load(root/'last.pt'); model.load_state_dict(last['model']); opt.load_state_dict(last['optimizer'])
+        last = load(root/'last.pt')
+        if last.get('checkpoint_metric', 'f1') != checkpoint_metric:
+            raise ValueError(f'{root}: cannot resume training with a different checkpoint metric')
+        model.load_state_dict(last['model']); opt.load_state_dict(last['optimizer'])
         start, best, bad, history = last['epoch'], last['best'], last['bad'], last['history']
         torch.set_rng_state(last['rng']); np.random.set_state(last['numpy_rng']); random.setstate(last['python_rng'])
         if device.type=='cuda': torch.cuda.set_rng_state(last['cuda_rng'], device)
@@ -76,20 +84,24 @@ def fit(model, train_dl, val_dl, task, cfg, root, device):
                 loss = F.binary_cross_entropy_with_logits(logits, b['y'])
             loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(), 1.); opt.step(); loss_sum += loss.detach()
         y, p = predict_loader(model, val_dl, task, device); cut = threshold(y, p)
-        score = float(f1(y, p, cut)); clipped = np.clip(p, 1e-7, 1-1e-7)
+        score = float(f1(y, p, cut)); val_auroc = float(auroc(y, p))
+        clipped = np.clip(p, 1e-7, 1-1e-7)
         val_loss = float(-(y*np.log(clipped)+(1-y)*np.log(1-clipped)).mean())
         record = dict(epoch=epoch+1, train_loss=float(loss_sum)/len(train_dl), val_f1=score,
-                      val_loss=val_loss, threshold=cut); history.append(record)
-        key = (score, -val_loss)
+                      val_auroc=val_auroc, val_loss=val_loss, threshold=cut,
+                      checkpoint_metric=checkpoint_metric); history.append(record)
+        key = (val_auroc if checkpoint_metric == 'auroc' else score, -val_loss)
         if key > best:
             best = key; bad = 0
             save_torch(root/'best.pt', dict(model=model.state_dict(), model_config=asdict(model.config), **record))
         else: bad += 1
         save_torch(root/'last.pt', dict(model=model.state_dict(), optimizer=opt.state_dict(), epoch=epoch+1,
-            best=best, bad=bad, history=history, rng=torch.get_rng_state(), numpy_rng=np.random.get_state(),
+            best=best, bad=bad, history=history, checkpoint_metric=checkpoint_metric,
+            rng=torch.get_rng_state(), numpy_rng=np.random.get_state(),
             python_rng=random.getstate(), cuda_rng=torch.cuda.get_rng_state(device) if device.type=='cuda' else None))
         pd.DataFrame(history).to_csv(root/'training.csv', index=False)
-        print(f'[epoch {task}/{root.name}] {epoch+1}/{cfg["max_epochs"]} loss={record["train_loss"]:.4f} val_F1={score:.4f} best={best[0]:.4f}', flush=True)
+        print(f'[epoch {task}/{root.name}] {epoch+1}/{cfg["max_epochs"]} loss={record["train_loss"]:.4f} '
+              f'val_AUROC={val_auroc:.4f} val_F1={score:.4f} select_by={checkpoint_metric} best={best[0]:.4f}', flush=True)
     checkpoint = load(root/'best.pt'); model.load_state_dict(checkpoint['model'])
     info = {k:v for k,v in checkpoint.items() if k not in ('model','model_config')}
     y = train_dl.dataset.master.iloc[train_dl.dataset.indices].y.to_numpy(int)
@@ -199,9 +211,21 @@ def cached_removals(task, variant, cfg, device, output, source_analysis=None):
 
 def run_model(task, variant, cfg, device):
     root = Path(cfg['output_root'])/task/variant; root.mkdir(parents=True, exist_ok=True)
-    if (root/'DONE.json').exists(): print(f'[reuse] {task}/{variant}', flush=True); return
+    if (root/'DONE.json').exists():
+        if read_json(root/'TRAINING_DONE.json').get('checkpoint_metric', 'f1') != cfg.get('backbone_checkpoint_metric', 'f1'):
+            raise ValueError(f'{root}: checkpoint selection changed; use a new output directory')
+        print(f'[reuse] {task}/{variant}', flush=True); return
     source = Path(cfg.get('prepared_inputs_root') or cfg['source_root']); entry = read_json(source/'inputs.json')[task]
     master, values, mask, basic, names, excluded = clinical_inputs(task, cfg, entry)
+    counts = master.groupby(['split', 'y']).size().to_string()
+    print(f'[outcome labels] {task}/{variant}: {entry["master"]}\n{counts}', flush=True)
+    train_y = master.loc[master.split == 'train', 'y'].to_numpy(dtype=int)
+    if not ((train_y == 0).any() and (train_y == 1).any()):
+        raise ValueError(f'{task}: training labels in {entry["master"]} need both classes; '
+                         f'N={len(train_y)}, negative={int((train_y == 0).sum())}, '
+                         f'positive={int((train_y == 1).sum())}. '
+                         'Check history_labels/cohort_counts.csv and the task audit CSV under source_root '
+                         'to distinguish label exclusions from an incorrect master or split.')
     if variant=='basic': values=values[:,basic]; mask=mask[:,basic]; names=[names[i] for i in basic]
     write_json(root/'input_columns.json', dict(clinical_features=names, target_columns_removed=excluded,
         clinical_source=entry['clinical_csv'], full_clinical_source_task=entry['full_clinical_source_task']))
